@@ -1,0 +1,26 @@
+# 默认忽略的文件
+/shelf/
+/workspace.xml
+# 基于编辑器的 HTTP 客户端请求
+/httpRequests/
+# 编译产物
+*.exe
+*.dll
+*.so
+*.jar
+build/
+dist/
+out/
+
+# 依赖
+node_modules/
+venv/
+__pycache__/
+
+# 编辑器
+.vscode/
+.idea/
+
+# 系统
+.DS_Store
+Thumbs.db

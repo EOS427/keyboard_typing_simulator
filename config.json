@@ -1,0 +1,18 @@
+{
+    "default_font":"consolas",
+    "font_size":15,
+    "semi_font_size":10,
+    "entry_width":4,
+    "button_width":10,
+    "max_length":1000,
+    "default_width":100,
+    "default_height":10,
+    "file_read_limit":1000,
+    "count_down_max":3600,
+    "count_down_min":3,
+    "count_down_font_size":30,
+    "count_down_win_remain_time":3000,
+    "typing_gap_min":0.01,
+    "typing_gap_max":1,
+    "transparency":1
+}
