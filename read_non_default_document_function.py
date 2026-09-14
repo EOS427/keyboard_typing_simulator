@@ -1,8 +1,8 @@
 # 读取非默认文本所使用的包以及函数
-
 import fitz
 import zipfile
 import xml.etree.ElementTree as ET
+
 
 def read_pdf_limited_with_fitz(path, limit=None):#读取pdf
     doc = fitz.open(path)
@@ -21,6 +21,7 @@ def read_pdf_limited_with_fitz(path, limit=None):#读取pdf
     doc.close()
     result = "\n".join(parts)
     return result[:limit] if limit else result  # ← 统一截断
+
 
 def read_docx_text_from_xml(path, limit=None):#读取docx
     ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}

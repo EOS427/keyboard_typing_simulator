@@ -1,4 +1,5 @@
 {
+
     "default_font":"consolas",
     "font_size":15,
     "semi_font_size":10,
@@ -14,5 +15,6 @@
     "count_down_win_remain_time":3000,
     "typing_gap_min":0.01,
     "typing_gap_max":1,
-    "transparency":1
+    "transparency":1,
+
 }
