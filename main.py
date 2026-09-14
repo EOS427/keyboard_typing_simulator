@@ -1,21 +1,13 @@
-import time
-import tkinter as tk
-import os
-import zipfile
-import fitz
-import xml.etree.ElementTree as ET
-import threading
-import json
-from tkinter.ttk import Combobox
-from tkinter import ttk, messagebox, filedialog, IntVar
+from tkinter import TclError
 
-import pyautogui
-from docx import Document
-from pypdf import PdfReader
+from package import *#导入包集合
+import read_non_default_document_function as ndf#导入文档阅读函数
 
+#读取配置文件
 with open("config.json", "r", encoding="utf-8") as file:
     config = json.load(file)
 
+#常量配置
 DEFAULT_FONT=config["default_font"]
 FONT_SIZE=config["font_size"]
 SEMI_FONT_SIZE=config["semi_font_size"]
@@ -37,9 +29,11 @@ content=""
 
 class WindowManager:
 
-    def setup_window(self):
+    def setup_window(self):#窗口主体搭建函数
 
-        def place_window_at_centre(window):
+        # Tk以及Toplevel共用置中置顶函数
+        def place_window_at_centre_front(window):
+            window.attributes("-topmost", True)
             window.update_idletasks()
             scr_half_height = window.maxsize()[1] // 2
             scr_half_width = window.maxsize()[0] // 2
@@ -51,6 +45,7 @@ class WindowManager:
             y_coor = scr_half_height - win_half_height
             window.geometry(f"{win_width}x{win_height}+{x_coor}+{y_coor}")
 
+        #主窗口初始化
         window=tk.Tk()
         window.title("键盘输入模仿器")
         # window.geometry("400x50+800+350")
@@ -61,6 +56,10 @@ class WindowManager:
         upload_var=tk.StringVar()
 
 
+        #窗口监控函数，绑定text
+        #on_modified监控text字数，改变字体颜色
+        #on_key监控输入以及字数，忽略指定输入并控制内容长度
+        #on_ctrl_v监控粘贴操作，禁止导致超出字数限制粘贴
         def on_modified(text,label):
 
             def show_count(event):
@@ -72,6 +71,7 @@ class WindowManager:
                 text.edit_modified(False)
 
             text.bind("<<Modified>>",show_count)
+
 
         def on_key(text):
 
@@ -88,17 +88,6 @@ class WindowManager:
 
             text.bind("<Key>", key_monitor)
 
-        def confirm_command(new_window,text):
-            text_str = text.get("1.0", "end-1c")
-            if len(text_str) == 0:
-                messagebox.showwarning("错误", "未填写文本", parent=new_window)
-            else:
-                choice = messagebox.showinfo("选项", "是否确认提交", parent=new_window)
-                if choice:
-                    global content
-                    content = text_str
-                    new_window.destroy()
-                    input_operating_window()
 
         def on_ctrl_v(text):
 
@@ -133,150 +122,133 @@ class WindowManager:
             text.bind("<Control-v>", paste_handler)
 
 
-        def manual_input():
-            new_window=tk.Toplevel(window)
+        #任务完成窗口退出缓冲函数，检测输入是否为空，询问用户选择
+        def confirm_command(new_window, text):
+            text_str = text.get("1.0", "end-1c")
+            if len(text_str) == 0:
+                messagebox.showwarning("错误", "未填写文本", parent=new_window)
+            else:
+                choice = messagebox.showinfo("选项", "是否确认提交", parent=new_window)
+                if choice:
+                    global content
+                    content = text_str
+                    new_window.destroy()
+                    input_operating_window()
+
+
+
+        def manual_input():#主窗口手动输入功能
+            new_window=tk.Toplevel(window)#第二级手动输入窗口初始化
             new_window.title("手动输入")
             new_window.resizable(False, False)
 
-            remind_label=tk.Label(new_window,text="请输入文本：",font=(DEFAULT_FONT,FONT_SIZE))
+            remind_label=tk.Label(new_window,text="请输入文本：",font=(DEFAULT_FONT,FONT_SIZE))#提示词与字数提示设置
             remind_label.grid(row=1,column=1)
-            count_label=tk.Label(new_window,text="目前字数：0/1000",font=(DEFAULT_FONT,FONT_SIZE))
+            count_label=tk.Label(new_window,text="目前字数：0/1000",font=(DEFAULT_FONT,FONT_SIZE))#创建字数提示label
             count_label.grid(row=2,column=1)
 
-            text_var=tk.StringVar()
+            text_var=tk.StringVar()#输入框设置
             text=tk.Text(new_window,width=DEFAULT_WIDTH,height=DEFAULT_HEIGHT,)
             text.grid(row=1,column=2)
             text.focus_set()
             text.tag_add("sel", "1.0", "1.0")
 
+            #监控函数绑定
             on_key(text)
-            on_modified(text,count_label)
+            on_modified(text,count_label)#传入字数提示label
             on_ctrl_v(text)
 
-            confirm_button=tk.Button(new_window,
+            confirm_button=tk.Button(new_window,#确认提交按钮设置
                                      text="提交",
                                      width=BUTTON_WIDTH,
                                      font=(DEFAULT_FONT, FONT_SIZE),
-                                     command=lambda:confirm_command(new_window,text))#确认提交
+                                     command=lambda:confirm_command(new_window,text))#确认提交函数绑定缓冲函数
             confirm_button.grid(row=2,column=2)
 
-            place_window_at_centre(new_window)
+            place_window_at_centre_front(new_window)#第二级窗口置中置顶
 
 
-        def open_file_explorer():
 
-            new_window=tk.Toplevel(window)
+        def open_file_explorer():#主窗口读取文档功能
+
+            new_window=tk.Toplevel(window)#第二级文档读取窗口初始化
             new_window.resizable(False, False)
 
-            def read_particular_file():
-                while True:
+
+            def read_particular_file():#阅读文档格式判断分类以及读取操作函数
+                while True:#保持错误操作后资源管理器开启
                     path = filedialog.askopenfilename(title="请选择要打开的文件")
                     if not path:
                         new_window.destroy()
                         return None
                     file_extension=os.path.splitext(path)[1].lower()
-                    if file_extension in (".txt", ".md", ".log", ".py", ".csv"):
+                    if file_extension in (".txt", ".md", ".log", ".py", ".csv"):#默认文档读取
                         with open(path, "r", encoding="utf-8", errors="replace") as file:
                             return file.read(FILE_READ_LIMIT)
 
 
-                    elif file_extension == ".pdf":
+                    #非默认文档阅读详见read_non_default_document_function.py
+                    elif file_extension == ".pdf":#pdf读取
                         try:
+                            ndf.read_pdf_limited_with_fitz(path, limit=None)
 
-                            def read_pdf_limited_with_fitz(path, limit=None):
-                                doc = fitz.open(path)
-                                parts = []
-                                total = 0
-                                for page in doc:
-                                    text = page.get_text("text")
-                                    remaining = limit - total if limit else None
-                                    if remaining is not None and remaining <= 0:
-                                        break
-                                    if remaining is not None and len(text) > remaining:
-                                        parts.append(text[:remaining])
-                                        break
-                                    parts.append(text)
-                                    total += len(text)
-                                doc.close()
-                                result = "\n".join(parts)
-                                return result[:limit] if limit else result  # ← 统一截断
-
-                            return read_pdf_limited_with_fitz(path, FILE_READ_LIMIT)
+                            return ndf.read_pdf_limited_with_fitz(path, FILE_READ_LIMIT)
 
                         except Exception as e:
                             messagebox.showwarning("错误", f"读取 PDF 失败：{e}", parent=window)
                             return None
 
-                    elif file_extension==".docx":
+                    elif file_extension==".docx":#docx读取
 
-                        def read_docx_text_from_xml(path, limit=None):
-                            ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
-                            with zipfile.ZipFile(path) as docx_zip:
-                                with docx_zip.open('word/document.xml') as xml_file:
-                                    context = ET.iterparse(xml_file, events=('start', 'end'))
-                                    _, root = next(context)  # 获取根元素
+                        ndf.read_docx_text_from_xml(path, limit=None)
 
-                                    text_parts = []
-                                    total_len = 0
+                        return ndf.read_docx_text_from_xml(path,FILE_READ_LIMIT)
 
-                                    for event, elem in context:
-                                        if event == 'end' and elem.tag.endswith('}t'):
-                                            if elem.text:
-                                                text_parts.append(elem.text)
-                                                total_len += len(elem.text)
-                                                if limit and total_len >= limit:
-                                                    break
-                                            elem.clear()
-
-                                    full_text = ''.join(text_parts)
-                                    return full_text[:limit] if limit else full_text
-
-                        return read_docx_text_from_xml(path,FILE_READ_LIMIT)
-
-
-                    else:
+                    else:#排除不支持格式文件，进行下一轮循环
                         messagebox.showwarning("错误","不支持该格式文件",parent=new_window)
                         continue
 
             global content
-            content=read_particular_file()
+            content=read_particular_file()#全局内容变量赋值
 
-            showcase_label=tk.Label(new_window,font=(DEFAULT_FONT,FONT_SIZE))
+            showcase_label=tk.Label(new_window,font=(DEFAULT_FONT,FONT_SIZE))#字数提示label创建
             showcase_label.grid(row=2,column=1)
-            remind_label=tk.Label(new_window,text="文本预览:\n(图片可能导致读取错误)",font=(DEFAULT_FONT,FONT_SIZE))
+            remind_label=tk.Label(new_window,text="文本预览:\n(图片可能导致读取错误)",font=(DEFAULT_FONT,FONT_SIZE))#提示词
             remind_label.grid(row=1,column=1)
-            showcase_text=tk.Text(new_window,width=DEFAULT_WIDTH,height=DEFAULT_HEIGHT,state="normal")
+            showcase_text=tk.Text(new_window,width=DEFAULT_WIDTH,height=DEFAULT_HEIGHT,state="normal")#输入框
             showcase_text.grid(row=1,column=2)
 
-            confirm_button=tk.Button(new_window,
+            confirm_button=tk.Button(new_window,#确认按钮设置
                                      text="确认",
                                      width=BUTTON_WIDTH,
                                      font=(DEFAULT_FONT, FONT_SIZE),
                                      command=lambda:confirm_command(new_window,showcase_text))#确认提交
             confirm_button.grid(row=2,column=2)
 
-            place_window_at_centre(new_window)
+            place_window_at_centre_front(new_window)#第二级窗口置中置顶
 
 
 
-
+            #请空原有内容，展示新读取内容函数
             def showcase_file_content(text,content):
                 text.delete("1.0","end")
                 text.insert("1.0",content)
 
+            #监控函数绑定
             on_key(showcase_text)
-            on_modified(showcase_text,showcase_label)
+            on_modified(showcase_text,showcase_label)#传入字数提示label
             on_ctrl_v(showcase_text)
 
-            showcase_file_content(showcase_text,content)
+            showcase_file_content(showcase_text,content)#展示读取内容
 
 
-        def input_operating_window():
-            new_window=tk.Toplevel(window)
+
+        def input_operating_window():#最终输出设置窗口，两种输入功能共用
+            new_window=tk.Toplevel(window)#第二级输出设置窗口初始化
             new_window.resizable(False,False)
             new_window.title("输入操作窗口")
 
-            countdown_duration=tk.IntVar(value=COUNT_DOWN_MIN)
+            countdown_duration=tk.IntVar(value=COUNT_DOWN_MIN)#倒计时时长与输入时间间隔Var设置
             typing_gap=tk.DoubleVar(value=TYPING_GAP_MAX)
             countdown_label=tk.Label(new_window,text=f"倒计时时长（秒）：",font=(DEFAULT_FONT,FONT_SIZE))
             countdown_label.grid(row=1,column=1)
@@ -287,7 +259,7 @@ class WindowManager:
             typing_gap_entry = tk.Entry(new_window, textvariable=typing_gap, width=ENTRY_WIDTH,font=(DEFAULT_FONT, FONT_SIZE))
             typing_gap_entry.grid(row=2, column=2)
 
-            remind_label=countdown_label=tk.Label(new_window,
+            remind_label=countdown_label=tk.Label(new_window,#提示词设置
                                                   text=f"倒计时时长应为正整数\n"
                                                        f"不得超过{COUNT_DOWN_MAX}秒\n"
                                                        f"不少于{COUNT_DOWN_MIN}秒\n"
@@ -299,8 +271,20 @@ class WindowManager:
                                                   font=(DEFAULT_FONT,SEMI_FONT_SIZE))
             remind_label.grid(row=3,column=1)
 
-            def check_duration_and_gap():
-                if not isinstance(countdown_duration.get(),int):
+            def check_duration_and_gap():#倒计时时长与输入时间间隔Var检查
+
+                def is_empty():#输入判空函数
+                    try:
+                        countdown_duration.get()
+                        typing_gap.get()
+                        return False
+                    except tk.TclError :
+                        return True
+
+                #输入判断分类
+                if is_empty():
+                    messagebox.showwarning("错误","输入为空",parent=new_window)
+                elif not isinstance(countdown_duration.get(),int):
                     messagebox.showwarning("错误", "时长非正整数", parent=new_window)
                 elif typing_gap.get()<0:
                     messagebox.showwarning("错误", "输入时间间隔非正数", parent=new_window)
@@ -320,7 +304,7 @@ class WindowManager:
                         return
 
 
-                    def floating_countdown():
+                    def floating_countdown():#倒计时窗口
                         root = tk.Toplevel(window)
                         # root.overrideredirect(True)  # 去掉标题栏和边框
                         root.attributes("-topmost", True)  # 总在最前
@@ -339,7 +323,7 @@ class WindowManager:
 
                         seconds = countdown_duration.get()
 
-                        def tick():
+                        def tick():#倒计时操作与检测函数
                             nonlocal seconds
                             if seconds > 1:
                                 seconds-=1
@@ -349,11 +333,11 @@ class WindowManager:
                                 rest_time_label.config(text="时间到")
                                 root.after(COUNT_DOWN_WIN_REMAIN_TIME,root.destroy)
 
-                        root.after(1000, tick)
+                        root.after(1000, tick)#进入定时执行
 
-                    floating_countdown()
+                    floating_countdown()#设置提交后开始倒计时
 
-                    def new_thread():
+                    def new_thread():#文本输出独立进程执行
                         time.sleep(countdown_duration.get())
                         pyautogui.write(content,interval=typing_gap.get())#开始输出文本
                         messagebox.showinfo("成功","文本输入完成",parent=window)
@@ -361,27 +345,28 @@ class WindowManager:
                     t1=threading.Thread(target=new_thread,daemon=True)
                     t1.start()
 
-            confirm_button = tk.Button(new_window,
+            confirm_button = tk.Button(new_window,#输出设置窗口确定按钮设置
                                        text="确认",
                                        width=BUTTON_WIDTH,
                                        font=(DEFAULT_FONT, FONT_SIZE),
                                        command=check_duration_and_gap)  # 确认输出
             confirm_button.grid(row=3, column=2)
 
-            place_window_at_centre(new_window)
+            place_window_at_centre_front(new_window)#第二级窗口置中置顶
 
 
 
+        #主窗口功能选择按钮设置
         button_1=tk.Button(window,text="手动输入",width=BUTTON_WIDTH,font=(DEFAULT_FONT, FONT_SIZE),command=manual_input)
         button_1.grid(row=1,column=2)
         button_2=tk.Button(window,text="选择文档",width=BUTTON_WIDTH,font=(DEFAULT_FONT, FONT_SIZE),command=open_file_explorer)
         button_2.grid(row=1,column=3)
 
-        place_window_at_centre(window)#窗口居中
-        window.mainloop()
+        place_window_at_centre_front(window)#主窗口居中置顶
+        window.mainloop()#开始主窗口循环
 
 
-def main():
+def main():#程序入口
     solution=WindowManager()
     solution.setup_window()
 
